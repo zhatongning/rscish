@@ -5,6 +5,20 @@ const taskQueue = []
 let lastStartTimeExecutingTask = -1
 const MostTimeToExecuting = 5
 
+const FinishFlag = 10000
+
+taskQueueProxy = new Proxy(taskQueue, {
+  set(target, key, value) {
+    target[key] = value
+    if (target.length <= 1) {
+      return target
+    }
+    target.sort((a, b) => (b.priority - a.priority))
+    return target
+  }
+})
+
+
 let timeToExecute = 5
 let wip = 1
 
@@ -29,7 +43,7 @@ function consumingWork() {
 }
 
 function count() {
-  // 答应的num可以看出是否是继续执行的
+  // 打印的num可以看出是否是继续执行的
   if (wip++) {
      // 只是一个耗时任务，没有任务作用
     consumingWork()
@@ -50,6 +64,11 @@ function mayTaskNeedLongTime(startTime) {
     count(wip)
   }
 
+  // 已完成任务
+  if (wip >= FinishFlag) {
+    return null
+  }
+
   // 返回 下一次执行的函数
   return mayTaskNeedLongTime
 }
@@ -65,7 +84,7 @@ function requestCalllback(callback) {
 
 
 function workLoop() {
-  console.log('workLoop')
+  console.log('workLoop', taskQueue)
   while (taskQueue.length) {
     if (lastStartTimeExecutingTask !== -1 && performance.now() > (lastStartTimeExecutingTask + MostTimeToExecuting)) {
       break
@@ -74,11 +93,15 @@ function workLoop() {
     const startTime = lastStartTimeExecutingTask = performance.now()
     // 最主要的 可中断执行
     const continousCallback = top.callback(startTime)
-    // 替换之前的callback为继续执行的callback
-    top.callback = continousCallback
+    if (typeof continousCallback === 'function') {
+      // 替换之前的callback为继续执行的callback
+      top.callback = continousCallback
+    } else {
+      taskQueue.shift()
+    }
   }
 
-  return timeToExecute-- === 0
+  return taskQueue.length === 0
 }
 
 
@@ -86,15 +109,24 @@ function start() {
   //
   const mockATask = {
     callback: mayTaskNeedLongTime,
+    priority: 1
   }
 
-  taskQueue.push(mockATask)
+  taskQueueProxy.push(mockATask)
 
   // 开始循环执行任务
   requestCalllback(workLoop)
 
+  setTimeout(() => {
+    taskQueueProxy.push({
+      callback() {
+        console.log('Do other task')
+      },
+      priority: 2
+    })
+  }, 0)
+
+
 }
-
-
 
 start()
